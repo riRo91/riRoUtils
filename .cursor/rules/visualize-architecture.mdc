@@ -162,6 +162,71 @@ Generate these only when the codebase warrants them:
 - **State Diagram**: For components with well-defined state machines (e.g., job lifecycle, pipeline status)
 - **Infrastructure Diagram**: For projects with complex deployment topologies (multi-namespace K8s, multi-cloud)
 
+#### 2.6 Pipeline/DAG Diagram
+
+*Generate when the codebase defines pipeline steps, workflow DAGs, or multi-stage processing.*
+
+Show pipeline steps as a DAG with colored nodes by component type and conditional edges.
+
+```mermaid
+graph TD
+    ingest["ingest\n(ingest)"]
+    preprocess["preprocess\n(transform)"]
+    analyze["analyze\n(ml_inference)"]
+    export["export\n(export)"]
+
+    ingest --> preprocess
+    preprocess --> analyze
+    analyze --> export
+
+    classDef ingestion fill:#4a90d9,stroke:#2c5f8a,color:#fff
+    classDef processing fill:#5cb85c,stroke:#3d8b3d,color:#fff
+    classDef ml fill:#f0ad4e,stroke:#c87f0a,color:#fff
+    classDef export fill:#9b59b6,stroke:#7d3c98,color:#fff
+
+    class ingest ingestion
+    class preprocess processing
+    class analyze ml
+    class export export
+```
+
+**Node format:** `{step_name}["{step_name}\n({step_type})"]`
+
+**Edge format:**
+- Normal dependency: `step_a --> step_b`
+- Conditional dependency: `step_a -.->|"condition"| step_b`
+
+**Style class mapping:**
+- `ingest`, `import`, `fetch` → `ingestion` (blue)
+- `preprocess`, `transform`, `normalize`, `validate` → `processing` (green)
+- `inference`, `classify`, `detect`, `segment`, `train` → `ml` (orange)
+- `export`, `report`, `notify`, `publish` → `export` (purple)
+
+**Conditional edges:** When a step has a condition field, use a dashed edge with the condition as a label:
+
+```mermaid
+preprocess --> analyze
+preprocess -.->|"format == csv"| csv_transform
+csv_transform --> analyze
+```
+
+**Summary table:** After the pipeline diagram, include:
+
+```markdown
+| Step | Type | Depends On | Resources | Timeout | Retries |
+|------|------|------------|-----------|---------|---------|
+| ingest | ingest | — | 500m CPU, 1Gi | 5 min | 3 |
+| preprocess | transform | ingest | 1 CPU, 4Gi | 10 min | 2 |
+| analyze | ml_inference | preprocess | 2 CPU, 8Gi, 1 GPU | 30 min | 1 |
+| export | export | analyze | 500m CPU, 2Gi | 5 min | 3 |
+```
+
+**Interactive design mode:** When the user is designing a new pipeline (not visualizing an existing one):
+1. Ask them to describe the steps and their order
+2. Generate the Mermaid DAG diagram
+3. Iterate: ask if they want to add, remove, or reorder steps
+4. Once finalized, generate the full pipeline definition JSON (using the `pipeline-dag-definition` skill)
+
 ### Phase 3 — Output
 
 #### 3.1 Create the Diagrams Document

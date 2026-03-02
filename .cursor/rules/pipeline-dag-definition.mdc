@@ -1,0 +1,194 @@
+---
+description: Design and validate pipeline definitions as DAGs with step dependencies, conditions, resource specs, timeouts, retries, and interactive design workflow
+globs:
+alwaysApply: false
+---
+
+# Pipeline DAG Definition
+
+Design and validate pipeline definitions as directed acyclic graphs (DAGs). Generates JSON pipeline schemas with step dependencies, conditions, resource specifications, timeouts, and retries. Includes interactive design workflow.
+
+## Trigger
+
+- The user asks to "define a pipeline", "create a workflow", "design a DAG", or similar
+- The user wants to define step dependencies, conditions, or resource requirements
+- The user asks to validate an existing pipeline definition
+
+## Procedure
+
+### Phase 1 — Gather Pipeline Requirements
+
+Ask the user for:
+
+1. **Pipeline name and version** (e.g., `data_processing_v1`)
+2. **Domain/purpose** (e.g., data ETL, ML training, image processing, CI/CD)
+3. **Processing steps** in order — name, what it does, what it depends on
+4. **Resource requirements** for each step (CPU, memory, GPU)
+5. **Conditional logic** (e.g., "only run step X if condition Y is met")
+6. **Timeout and retry requirements**
+
+### Phase 2 — Generate Pipeline Definition JSON
+
+Follow this schema:
+
+```json
+{
+  "pipeline_definition_id": "{name}_v{version_number}",
+  "version": "{semver}",
+  "description": "Human-readable description of the pipeline",
+  "domain": "{domain}",
+  "steps": [
+    {
+      "name": "unique_step_name",
+      "type": "step_type",
+      "container_image": "{registry}/{image}:{tag}",
+      "depends_on": ["previous_step_name"],
+      "config": {},
+      "resources": {
+        "cpu": "500m",
+        "memory": "1Gi",
+        "gpu": null
+      },
+      "timeout_seconds": 300,
+      "max_retries": 2,
+      "condition": null
+    }
+  ]
+}
+```
+
+### Phase 3 — DAG Validation
+
+Validate the generated definition against these rules:
+
+#### Structural Validation
+
+- [ ] `pipeline_definition_id` is unique and matches pattern `[a-z0-9_]+_v[0-9]+`
+- [ ] `version` is valid semver (e.g., `1.0.0`)
+- [ ] All step `name` values are unique within the pipeline and match `[a-z0-9_]+`
+- [ ] All `depends_on` references point to steps that exist in the definition
+- [ ] At least one step has `depends_on: []` (entry step)
+- [ ] At least one step has no dependents (terminal step)
+- [ ] `timeout_seconds` > 0 for all steps
+- [ ] `max_retries` >= 0 for all steps
+
+#### Cycle Detection (Kahn's Algorithm)
+
+```python
+def detect_cycles(steps: list[dict]) -> list[str] | None:
+    """Returns None if no cycles, or a list of step names in the cycle."""
+    # Build adjacency and in-degree maps
+    in_degree = {s["name"]: 0 for s in steps}
+    dependents = {s["name"]: [] for s in steps}
+
+    for step in steps:
+        for dep in step.get("depends_on", []):
+            dependents[dep].append(step["name"])
+            in_degree[step["name"]] += 1
+
+    # Kahn's algorithm
+    queue = [name for name, degree in in_degree.items() if degree == 0]
+    sorted_steps = []
+
+    while queue:
+        current = queue.pop(0)
+        sorted_steps.append(current)
+        for dependent in dependents[current]:
+            in_degree[dependent] -= 1
+            if in_degree[dependent] == 0:
+                queue.append(dependent)
+
+    if len(sorted_steps) != len(steps):
+        # Remaining steps with in_degree > 0 form a cycle
+        cycle_steps = [name for name, degree in in_degree.items() if degree > 0]
+        return cycle_steps
+
+    return None
+```
+
+#### Conditional Execution
+
+For steps that should only run when a condition is met, use this format:
+
+```json
+{
+  "condition": {
+    "field": "metadata.{field_name}",
+    "operator": "eq",
+    "value": "expected_value"
+  }
+}
+```
+
+Supported operators:
+- `eq` — equals
+- `neq` — not equals
+- `in` — value is in a list
+- `gt` / `lt` / `gte` / `lte` — numeric comparisons
+- `exists` — field exists (value is `true`/`false`)
+
+When a condition evaluates to false, the step is **skipped**, and any steps that depend *only* on skipped steps are also skipped.
+
+### Phase 4 — Resource Guidelines
+
+Provide these default tiers (users should customize for their workloads):
+
+| Tier | CPU | Memory | GPU | Typical Use |
+|------|-----|--------|-----|-------------|
+| Small | 500m | 1Gi | — | I/O, export, simple transforms |
+| Medium | 1 | 4Gi | — | Image preprocessing, data transforms |
+| Large | 2 | 8Gi | 1 | ML inference, heavy computation |
+| XLarge | 4 | 16Gi | 1-2 | Training, batch inference |
+
+**Timeout guidelines:**
+
+| Step Type | Default Timeout | Rationale |
+|-----------|----------------|-----------|
+| I/O, export | 5 min (300s) | Simple file operations |
+| Preprocessing | 10 min (600s) | Image/data manipulation |
+| ML inference | 30 min (1800s) | Model loading + inference |
+| Heavy processing | 60 min (3600s) | Training, large batches |
+
+**Retry guidelines:**
+
+| Step Type | Default Retries | Rationale |
+|-----------|----------------|-----------|
+| I/O, export | 3 | Often transient failures |
+| Preprocessing | 2 | Mixed failure modes |
+| ML inference | 1 | Failures usually deterministic |
+| Training | 0 | Long-running, checkpoint instead |
+
+### Phase 5 — Interactive Design Workflow
+
+When the user is designing a new pipeline (not validating an existing one):
+
+1. **Describe** — Ask the user to describe the pipeline steps and their order in plain language
+2. **Diagram** — Generate a Mermaid DAG diagram (see `visualize-architecture` skill, Phase 2.6)
+3. **Iterate** — Ask if they want to add, remove, or reorder steps; adjust conditions or resources
+4. **Generate** — Once finalized, produce the full pipeline definition JSON
+5. **Validate** — Run all validation checks and report results
+
+### Phase 6 — Storage
+
+Store the pipeline definition in one of:
+- A versioned JSON file in the repository: `pipelines/definitions/{pipeline_definition_id}.json`
+- A database collection (e.g., MongoDB `pipeline_definitions` with unique index on `pipeline_definition_id`)
+
+## Output
+
+Report to the user:
+
+```
+Pipeline Definition:
+  ID: {pipeline_definition_id}
+  Version: {version}
+  Steps: {count}
+  Entry steps: {list}
+  Terminal steps: {list}
+  Conditions: {count}
+  Validation: {PASS | FAIL with details}
+
+  Files generated:
+    - pipelines/definitions/{pipeline_definition_id}.json
+    - {Mermaid diagram if requested}
+```

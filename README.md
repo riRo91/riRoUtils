@@ -4,7 +4,7 @@ Reusable AI-agent skills, scripts, and utilities for project bootstrapping, docu
 
 ## What This Is
 
-A curated collection of generic, project-agnostic skills and rules designed for use with AI coding agents (Claude Code and Cursor). Each skill is a battle-tested procedure distilled from real engineering sessions, scrubbed of project-specific details, and packaged for immediate reuse.
+A curated collection of generic, project-agnostic skills, agents, and rules designed for use with AI coding agents (Claude Code and Cursor). Each skill is a battle-tested procedure distilled from real engineering sessions, scrubbed of project-specific details, and packaged for immediate reuse. Agents compose skills into specialized roles that can be dispatched as a dev support team.
 
 ## Repository Structure
 
@@ -13,10 +13,13 @@ riRoUtils/
 ├── AGENT.md                  # Instructions for AI agents working on this repo
 ├── README.md                 # This file
 ├── .claude/
-│   └── skills/               # Claude Code skills (.md)
+│   ├── skills/               # Claude Code skills (.md)
+│   ├── agents/               # Agent definitions (.md with YAML frontmatter)
+│   └── team.md               # Team coordination manifest
 ├── .cursor/
 │   └── rules/                # Cursor rules (.mdc) — mirrors of Claude skills
-├── docs/                     # Detailed documentation for each skill
+├── docs/                     # Detailed documentation
+│   └── team-workflows.md     # Multi-agent workflow guide
 ├── scripts/                  # Executable utility scripts
 │   └── setup-github.sh       # Project-scoped GitHub CLI setup
 ├── .envrc                    # direnv config for GitHub isolation
@@ -33,7 +36,38 @@ riRoUtils/
 | 4 | **Mirror Agent Rules** | Sync skills/rules between `.claude/skills/` (.md) and `.cursor/rules/` (.mdc) to keep both agent environments consistent |
 | 5 | **Scaffold Project Structure** | Bootstrap a new project with a standardized layout: AGENT.md, README, .claude/, .cursor/, docs/, scripts/, and all config files |
 | 6 | **Conversation-to-Memory** | Extract key learnings, patterns, and decisions from a session and persist them to structured memory files for future context |
-| 7 | **Visualize Architecture** | Scan a codebase and produce mermaid diagrams of its architecture, component relationships, data flow, and directory structure |
+| 7 | **Visualize Architecture** | Scan a codebase and produce mermaid diagrams of its architecture, component relationships, data flow, directory structure, and pipeline DAGs |
+| 8 | **Scaffold Microservice** | Generate a full microservice project with standardized lifecycle (batch job, long-running service, or CLI tool), config validation, Dockerfile, and tests |
+| 9 | **Message Queue Patterns** | Design message queue topologies, exchange/queue layouts, dead-letter handling, message envelope schemas, RPC request-reply, and retry policies |
+| 10 | **Database Metadata Patterns** | Implement database metadata storage with connection pooling, scoped CRUD, batch operations, flexible schemas, index strategies, and init scripts |
+| 11 | **Pipeline DAG Definition** | Design and validate pipeline definitions as DAGs with step dependencies, conditions, resource specs, timeouts, retries, and interactive design workflow |
+| 12 | **Review Code Compliance** | Review code against project conventions using a configurable PASS/FAIL checklist covering lifecycle, messaging, storage, security, and containerization |
+
+## Agents
+
+Specialized agents that compose skills into focused roles. Each agent is defined in `.claude/agents/` with YAML frontmatter specifying its role, tools, and skills.
+
+| Agent | Role | Model | Skills Used |
+|-------|------|-------|-------------|
+| **project-architect** | Bootstrap projects, design structure, set up isolation | opus | scaffold-project-structure, github-isolation-setup, scaffold-microservice |
+| **documentarian** | Extract docs, generate diagrams, persist knowledge | opus | post-implementation-docs, visualize-architecture, conversation-to-memory |
+| **debugger** | Systematic debugging, RCA, fix proposals | opus | debugging-rca-report |
+| **infra-engineer** | K8s, MQ, databases, pipeline DAGs | opus | message-queue-patterns, database-metadata-patterns, pipeline-dag-definition |
+| **code-reviewer** | Review conventions, sync rules | sonnet | review-code-compliance, mirror-agent-rules |
+
+See `.claude/team.md` for dispatch rules and `docs/team-workflows.md` for composition chains.
+
+## Team Workflows
+
+Agents can be composed into multi-step workflows:
+
+- **Build & Document** — project-architect → *(implement)* → documentarian
+- **Debug & Fix** — debugger → *(fix)* → code-reviewer → documentarian
+- **Infrastructure Setup** — infra-engineer → project-architect → code-reviewer
+- **Full Project Bootstrap** — project-architect → infra-engineer → project-architect → documentarian
+- **Code Quality Pass** — code-reviewer → *(fix)* → code-reviewer → documentarian
+
+See `docs/team-workflows.md` for detailed step-by-step guides with examples.
 
 ## How to Use
 
@@ -47,6 +81,18 @@ cp riRoUtils/.claude/skills/<skill-name>.md /path/to/your/project/.claude/skills
 Cursor:
 ```bash
 cp riRoUtils/.cursor/rules/<skill-name>.mdc /path/to/your/project/.cursor/rules/
+```
+
+### Copy an agent into your project
+
+```bash
+cp riRoUtils/.claude/agents/<agent-name>.md /path/to/your/project/.claude/agents/
+```
+
+### Copy the team manifest
+
+```bash
+cp riRoUtils/.claude/team.md /path/to/your/project/.claude/team.md
 ```
 
 ### Use the GitHub isolation script directly
@@ -64,6 +110,7 @@ bash riRoUtils/scripts/setup-github.sh
 - **Self-documenting** — Skills include trigger conditions, step-by-step procedures, and expected outputs
 - **Context-efficient** — Designed to give AI agents maximum understanding with minimum token usage
 - **Battle-tested** — Each skill originates from a real engineering workflow that proved effective
+- **Composable** — Skills are building blocks; agents compose them into specialized roles
 
 ## GitHub Isolation
 

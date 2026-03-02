@@ -1,0 +1,173 @@
+# Review Code Compliance
+
+Review code against project conventions using a configurable checklist. Produces a structured PASS/FAIL report with specific code references for each check.
+
+## Trigger
+
+- The user asks to "review code", "check compliance", "audit this service", or similar
+- The user asks if a component follows project conventions
+- The user asks for a code review checklist
+
+## Procedure
+
+### Phase 1 — Determine Review Scope
+
+Ask the user for:
+
+1. **Target**: Which file, directory, or service to review
+2. **Convention source**: Where are the project conventions defined? (AGENT.md, CLAUDE.md, a design doc, or custom rules provided inline)
+3. **Review depth**: Quick scan (structure + obvious issues) or deep review (every checklist item)
+
+### Phase 2 — Load Conventions
+
+Read the project's convention document (AGENT.md, CLAUDE.md, or user-specified). Extract the applicable rules for each checklist section. If no conventions are defined, use the generic defaults below.
+
+### Phase 3 — Execute Checklist
+
+Review the code against each applicable section. Mark each item as PASS or FAIL with a specific code reference.
+
+#### Section 1: Lifecycle Adherence
+
+*Applicable to: services, batch jobs, CLI tools*
+
+Check that the entry point follows the project's lifecycle pattern:
+
+- [ ] **Config validation at startup**: All required configuration (env vars, CLI args, config files) is validated before any processing begins — fail fast with clear errors
+- [ ] **Phase separation**: Lifecycle phases (init, load, process, persist, report — or equivalent) are clearly separated, not interleaved
+- [ ] **Core logic isolation**: Business logic is in a dedicated module, not in the entry point
+- [ ] **Graceful shutdown**: Long-running services handle SIGTERM/SIGINT
+- [ ] **Exit codes**: Non-zero exit on failure
+
+#### Section 2: Message/API Contract
+
+*Applicable to: services that publish messages or expose APIs*
+
+- [ ] **Schema compliance**: Messages/responses match the project's defined schema (envelope format, required fields)
+- [ ] **Publisher confirms**: Messages use publisher confirms (not fire-and-forget)
+- [ ] **Persistence**: Messages are persistent (`delivery_mode=2` or equivalent)
+- [ ] **Content type**: Messages have correct content type headers
+- [ ] **Unique IDs**: Every message has a unique identifier
+- [ ] **Publish ordering**: Messages are published AFTER all side effects (disk/DB writes) complete
+- [ ] **Routing convention**: Routing keys follow the project's naming convention
+
+#### Section 3: Storage Patterns
+
+*Applicable to: services that read/write files*
+
+- [ ] **Input/output isolation**: Reads only from designated input paths; writes only to designated output paths
+- [ ] **No cross-contamination**: Does not modify input data or write to another service's output directory
+- [ ] **Path isolation**: Uses a run ID, tenant ID, or similar partition key in file paths
+- [ ] **Atomic writes**: Writes to temp location first, then moves/renames (for critical outputs)
+
+#### Section 4: Database Patterns
+
+*Applicable to: services that use a database*
+
+- [ ] **Connection pooling**: Uses connection pooling with reasonable timeouts
+- [ ] **Scoped queries**: Queries are scoped to the partition key (never unbounded scans)
+- [ ] **UTC timestamps**: All timestamps use UTC (no naive datetimes)
+- [ ] **Required fields**: Documents include the project's required fields (partition key, source, timestamps)
+- [ ] **No hardcoded URIs**: Connection strings come from environment/config
+
+#### Section 5: Error Handling
+
+- [ ] **Specific exceptions**: No bare `except:` clauses — exceptions are typed
+- [ ] **Retryable classification**: Errors are classified as retryable vs. permanent
+- [ ] **Error reporting**: Failures are reported (message, log, or metric) with sufficient detail
+- [ ] **Infrastructure failures**: Connection/timeout errors cause appropriate behavior (retry or exit non-zero)
+- [ ] **No silent swallowing**: Errors are never caught and ignored
+
+#### Section 6: Logging
+
+- [ ] **Structured logging**: Uses structured (JSON) logging, not print statements
+- [ ] **Context fields**: Log entries include relevant context (run ID, service name, request ID)
+- [ ] **Phase transitions**: Logs at INFO for each lifecycle phase or significant state change
+- [ ] **Error detail**: Error logs include stack traces and relevant context
+- [ ] **No sensitive data**: Logs do not contain credentials, tokens, or PII
+
+#### Section 7: Security
+
+- [ ] **No hardcoded credentials**: Secrets come from environment variables, secret managers, or mounted files
+- [ ] **Non-root container**: Dockerfile runs as a non-root user
+- [ ] **Minimal dependencies**: No unnecessary packages in production image
+- [ ] **Input validation**: External inputs are validated/sanitized at system boundaries
+- [ ] **No debug in production**: Debug endpoints, verbose logging, or dev-only features are disabled by default
+
+#### Section 8: Containerization
+
+- [ ] **Multi-stage build**: Dockerfile uses multi-stage build to minimize image size
+- [ ] **Pinned base image**: Base image is pinned (tag or digest)
+- [ ] **Pinned dependencies**: All dependencies have version constraints
+- [ ] **.dockerignore**: Excludes tests, docs, local configs, secrets
+- [ ] **Labels**: Image has descriptive OCI labels
+
+### Phase 4 — Generate Report
+
+Produce a structured report:
+
+```markdown
+# Compliance Review: {target}
+
+**Reviewed**: {date}
+**Convention source**: {AGENT.md | user-specified}
+**Overall**: {X}/{Y} checks passed
+
+## Results
+
+### Lifecycle Adherence: {PASS | X/Y}
+- [x] Config validation at startup — `src/config.py:15`
+- [ ] **FAIL**: Phase separation — processing logic in `main.py:42` should be in `processor.py`
+
+### Message/API Contract: {PASS | X/Y}
+- [x] Schema compliance — matches envelope in `AGENT.md`
+- [ ] **FAIL**: Missing publisher confirms — `src/reporter.py:28`
+
+### Storage Patterns: {PASS | N/A}
+...
+
+### Error Handling: {PASS | X/Y}
+...
+
+### Logging: {PASS | X/Y}
+...
+
+### Security: {PASS | X/Y}
+...
+
+### Containerization: {PASS | X/Y}
+...
+
+## Summary
+
+**Critical issues** (must fix):
+1. {issue} — {file:line}
+
+**Recommendations** (should fix):
+1. {recommendation} — {file:line}
+
+**Notes**:
+- Sections marked N/A were skipped because {reason}
+```
+
+### Phase 5 — Customization
+
+Users can customize the checklist by:
+
+1. **Adding project-specific checks** in their AGENT.md under a "Compliance Rules" section
+2. **Disabling sections** that don't apply (e.g., skip "Message Contract" for a pure CLI tool)
+3. **Adding domain-specific checks** (e.g., HIPAA compliance, PCI-DSS requirements)
+
+When custom checks are defined, merge them into the appropriate section of the checklist.
+
+## Output
+
+Report to the user:
+
+```
+Compliance Review Complete:
+  Target: {path}
+  Result: {X}/{Y} checks passed
+  Critical: {count} issues
+  Recommendations: {count} items
+  Report: {inline or path to generated file}
+```

@@ -1,0 +1,258 @@
+# Scaffold a New Microservice
+
+Create a new microservice following standardized lifecycle, containerization, and configuration conventions. Generates a full project structure including entry point, config, processing logic, storage helpers, messaging, Dockerfile, and tests.
+
+## Trigger
+
+- The user asks to "create a microservice", "scaffold a service", "add a new service", or similar
+- The user wants to build a batch job, long-running service, or CLI tool with standard structure
+
+## Procedure
+
+### Step 1 — Gather Requirements
+
+Ask the user for:
+
+- **Service name** (e.g., `image_processor`, `data_ingester`, `report_generator`)
+- **Service pattern**: batch job (run-to-completion), long-running service (daemon), or CLI tool
+- **Tech stack**: Python (default), Node.js, or Go
+- **Input source**: files on disk, database records, message queue, API requests
+- **Output destination**: files on disk, database, message queue, API responses
+- **Dependencies**: any special packages needed (ML frameworks, image libraries, etc.)
+- **Infrastructure**: which backing services are needed (database, message queue, cache, none)
+
+### Step 2 — Generate Project Structure
+
+Create the following tree (Python example; adapt for other stacks):
+
+```
+services/{service_name}/
+  .venv/                # Virtual environment (not committed)
+  src/
+    __init__.py
+    main.py             # Entry point with lifecycle handler
+    config.py           # Environment variable parsing and validation
+    processor.py        # Core processing logic (service-specific)
+    storage.py          # Disk/file read/write helpers
+    metadata.py         # Database read/write helpers (if applicable)
+    reporter.py         # Message publisher (if applicable)
+    models.py           # Pydantic/dataclass models
+  tests/
+    __init__.py
+    test_processor.py   # Unit tests for core logic
+    test_integration.py # Integration test template
+  Dockerfile            # Multi-stage build
+  .dockerignore
+  requirements.txt      # Pinned dependencies
+  .env.example          # Local development values
+```
+
+### Step 3 — Implement Lifecycle Pattern
+
+The entry point (`main.py`) must follow a configurable lifecycle pattern. Choose based on service pattern:
+
+#### Batch Job (run-to-completion)
+
+```python
+def main():
+    # 1. INIT — parse config, connect to backing services, validate inputs
+    config = load_config()
+    db_client = connect_db(config.db_uri) if config.db_uri else None
+    mq_connection = connect_mq(config.mq_uri) if config.mq_uri else None
+
+    # 2. LOAD — read input data from source
+    input_data = load_input(config.input_source)
+    input_metadata = load_metadata(db_client, config.query) if db_client else {}
+
+    # 3. PROCESS — execute core logic
+    result = process(input_data, input_metadata, config.process_config)
+
+    # 4. PERSIST — write outputs
+    save_output(result, config.output_destination)
+    if db_client:
+        save_metadata(db_client, config.run_id, config.service_name, result.metadata)
+
+    # 5. REPORT — signal completion
+    if mq_connection:
+        publish_completion(mq_connection, config.exchange, config.run_id, config.service_name)
+```
+
+#### Long-Running Service (daemon)
+
+```python
+def main():
+    # 1. INIT — parse config, connect to backing services
+    config = load_config()
+    db_client = connect_db(config.db_uri) if config.db_uri else None
+
+    # 2. SERVE — start API server or message consumer loop
+    if config.mode == "api":
+        start_api_server(config, db_client)
+    elif config.mode == "consumer":
+        start_consumer_loop(config, db_client)
+
+    # 3. SHUTDOWN — graceful cleanup on SIGTERM/SIGINT
+    register_shutdown_hooks(cleanup_resources)
+```
+
+#### CLI Tool
+
+```python
+def main():
+    # 1. INIT — parse CLI args, load config
+    # 2. EXECUTE — run the requested command
+    # 3. OUTPUT — print results, write files, or send messages
+```
+
+### Step 4 — Implement Config Validation
+
+`config.py` must validate ALL required environment variables at startup and fail fast with clear error messages:
+
+```python
+import os
+from dataclasses import dataclass
+
+@dataclass
+class Config:
+    service_name: str
+    run_id: str
+    input_source: str
+    output_destination: str
+    db_uri: str | None = None
+    mq_uri: str | None = None
+    exchange: str | None = None
+    process_config: dict = None
+    log_level: str = "INFO"
+
+def load_config() -> Config:
+    missing = []
+    def require(key):
+        val = os.environ.get(key)
+        if not val:
+            missing.append(key)
+        return val
+
+    config = Config(
+        service_name=require("SERVICE_NAME"),
+        run_id=require("RUN_ID") or "",
+        input_source=require("INPUT_SOURCE") or "",
+        output_destination=require("OUTPUT_DESTINATION") or "",
+        db_uri=os.environ.get("DB_URI"),
+        mq_uri=os.environ.get("MQ_URI"),
+        exchange=os.environ.get("MQ_EXCHANGE"),
+        log_level=os.environ.get("LOG_LEVEL", "INFO"),
+    )
+
+    if missing:
+        raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
+
+    return config
+```
+
+### Step 5 — Generate Dockerfile
+
+Use this multi-stage template:
+
+```dockerfile
+FROM python:3.11-slim AS builder
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+FROM python:3.11-slim
+LABEL org.opencontainers.image.title="{service_name}"
+LABEL org.opencontainers.image.description="{description}"
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid 1000 --create-home appuser
+COPY --from=builder /install /usr/local
+WORKDIR /app
+COPY src/ ./src/
+USER appuser
+ENTRYPOINT ["python", "-m", "src.main"]
+```
+
+Generate a `.dockerignore`:
+
+```
+.venv/
+__pycache__/
+*.pyc
+tests/
+.env
+.env.example
+*.md
+.mypy_cache/
+.pytest_cache/
+```
+
+### Step 6 — Generate Supporting Files
+
+**requirements.txt** — include pinned versions for the selected stack:
+
+```
+# Core (always)
+pydantic>=2.0,<3.0
+
+# Database (if applicable)
+pymongo>=4.6,<5.0
+
+# Message queue (if applicable)
+pika>=1.3,<2.0
+
+# Add step-specific dependencies below
+```
+
+**.env.example** — local development values:
+
+```env
+SERVICE_NAME={service_name}
+RUN_ID=test-run-001
+INPUT_SOURCE=/data/input/
+OUTPUT_DESTINATION=/data/output/
+DB_URI=mongodb://user:pass@localhost:27017/mydb?authSource=mydb
+MQ_URI=amqp://user:pass@localhost:5672/myvhost
+MQ_EXCHANGE=events
+LOG_LEVEL=DEBUG
+```
+
+### Step 7 — Error Handling
+
+Wrap the PROCESS phase in try/except. For batch jobs, publish a failure message on error with an appropriate `retryable` flag:
+
+```python
+try:
+    result = process(input_data, input_metadata, config.process_config)
+except TransientError as e:
+    publish_failure(mq_connection, config.exchange, config.run_id, config.service_name,
+                    error_code="TRANSIENT", error_message=str(e), retryable=True)
+    sys.exit(1)
+except Exception as e:
+    publish_failure(mq_connection, config.exchange, config.run_id, config.service_name,
+                    error_code="PERMANENT", error_message=str(e), retryable=False)
+    sys.exit(1)
+```
+
+### Step 8 — Validation
+
+After generating all files, verify:
+
+- [ ] All required env vars are validated in `config.py`
+- [ ] Lifecycle phases are clearly separated in `main.py`
+- [ ] Core logic is isolated in `processor.py` (not in `main.py`)
+- [ ] Dockerfile builds successfully (`docker build -t {service_name} .`)
+- [ ] `.env.example` has all required variables
+- [ ] Tests exist for `processor.py`
+
+## Output
+
+Report to the user:
+
+```
+Microservice scaffolded:
+  services/{service_name}/
+    - Pattern: {batch_job|long_running|cli_tool}
+    - Stack: {python|node|go}
+    - Lifecycle: {phases used}
+    - Backing services: {db, mq, none}
+    - Files: {count} files generated
+```

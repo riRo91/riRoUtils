@@ -1,0 +1,293 @@
+# Message Queue Patterns
+
+Design and implement message queue topologies, publishing patterns, and consumption strategies. Covers exchange/queue design, dead-letter handling, message envelope schemas, RPC request-reply, and retry policies.
+
+## Trigger
+
+- The user asks to "design a message queue topology", "set up RabbitMQ", "implement messaging", or similar
+- The user needs to publish or consume messages, design routing, or handle dead letters
+- The user asks about RPC patterns, message envelopes, or retry strategies
+
+## Procedure
+
+### Phase 1 — Topology Design
+
+When the user needs a new message queue topology, gather requirements:
+
+1. **Communication patterns needed**:
+   - **Pub/Sub** (topic exchange) — one publisher, many consumers by routing key
+   - **Work queue** (direct exchange) — load-balanced consumption across workers
+   - **Fanout** — broadcast to all bound queues
+   - **RPC** (direct + reply-to) — request-reply with correlation IDs
+
+2. **Message categories**: What types of messages flow through the system? (events, commands, queries)
+
+3. **Durability requirements**: Must messages survive broker restarts? (almost always yes)
+
+4. **TTL and retention**: How long should unprocessed messages live?
+
+5. **Dead-letter strategy**: What happens to failed/expired messages?
+
+### Phase 2 — Exchange and Queue Design
+
+#### Exchange Naming Convention
+
+```
+{domain}.{category}           # Main exchange
+{domain}.{category}.dlx       # Dead-letter exchange
+```
+
+Examples:
+- `pipeline.events` / `pipeline.events.dlx`
+- `orders.commands` / `orders.commands.dlx`
+- `notifications.events` / `notifications.events.dlx`
+
+#### Queue Naming Convention
+
+```
+{consumer}.{message_type}     # For topic/direct queues
+{consumer}.{category}         # For catch-all queues
+```
+
+Examples:
+- `orchestrator.step_completions`
+- `billing.order_events`
+- `mailer.notifications`
+
+#### Routing Key Convention
+
+For topic exchanges, use dot-separated hierarchies:
+
+```
+{entity}.{action}.{source}    # Specific
+{entity}.{action}.*           # Wildcard binding
+{entity}.#                    # Catch-all binding
+```
+
+Examples:
+- `step.completed.image_processor` → bound with `step.completed.*`
+- `order.created.web` → bound with `order.#`
+- `resource.cpu.node-1` → bound with `resource.#`
+
+#### Dead-Letter Exchange (DLX) Pattern
+
+Every main exchange should have a parallel DLX. Every queue should route failed messages to the DLX:
+
+```python
+# Queue declaration with DLX
+channel.queue_declare(
+    queue="orchestrator.step_completions",
+    durable=True,
+    arguments={
+        "x-dead-letter-exchange": "pipeline.events.dlx",
+        "x-message-ttl": 86400000  # 24 hours
+    }
+)
+```
+
+DLX queues mirror the main queues with a `.dlq` suffix for inspection and replay.
+
+#### Topology Definition File
+
+For RabbitMQ, generate a `definitions.json` that can be loaded on startup:
+
+```json
+{
+  "vhosts": [{"name": "/{vhost_name}"}],
+  "users": [{"name": "{user}", "password_hash": "...", "tags": ""}],
+  "permissions": [{"user": "{user}", "vhost": "/{vhost_name}", "configure": ".*", "write": ".*", "read": ".*"}],
+  "exchanges": [
+    {"name": "{domain}.events", "vhost": "/{vhost_name}", "type": "topic", "durable": true},
+    {"name": "{domain}.events.dlx", "vhost": "/{vhost_name}", "type": "topic", "durable": true},
+    {"name": "{domain}.commands", "vhost": "/{vhost_name}", "type": "direct", "durable": true},
+    {"name": "{domain}.commands.dlx", "vhost": "/{vhost_name}", "type": "direct", "durable": true}
+  ],
+  "queues": [],
+  "bindings": []
+}
+```
+
+### Phase 3 — Message Envelope Schema
+
+All messages must follow a universal envelope format:
+
+```json
+{
+  "message_id": "uuid-v4",
+  "timestamp": "ISO-8601 UTC",
+  "correlation_id": "uuid-v4 (for tracing related messages)",
+  "source": "service-name",
+  "event_type": "entity.action",
+  "version": "1.0",
+  "payload": {
+    "status": "completed | failed | pending",
+    "data": {},
+    "error": {
+      "code": "ERROR_CODE | null",
+      "message": "Human-readable | null",
+      "retryable": false
+    },
+    "metrics": {
+      "duration_ms": 0,
+      "items_processed": 0,
+      "custom": {}
+    }
+  }
+}
+```
+
+#### Envelope Implementation (Python)
+
+```python
+import uuid
+import json
+from datetime import datetime, timezone
+
+def create_message(source: str, event_type: str, payload: dict, correlation_id: str = None) -> dict:
+    return {
+        "message_id": str(uuid.uuid4()),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "correlation_id": correlation_id or str(uuid.uuid4()),
+        "source": source,
+        "event_type": event_type,
+        "version": "1.0",
+        "payload": payload,
+    }
+```
+
+### Phase 4 — Publishing Patterns
+
+#### Always Use Publisher Confirms
+
+Never fire-and-forget. Always enable publisher confirms:
+
+```python
+import pika
+import json
+
+def publish_event(connection, exchange: str, routing_key: str, message: dict):
+    channel = connection.channel()
+    channel.confirm_delivery()
+
+    channel.basic_publish(
+        exchange=exchange,
+        routing_key=routing_key,
+        body=json.dumps(message),
+        properties=pika.BasicProperties(
+            delivery_mode=2,          # persistent
+            content_type="application/json",
+            message_id=message["message_id"],
+            timestamp=int(datetime.now(timezone.utc).timestamp()),
+        )
+    )
+```
+
+#### Publishing Rules
+
+- Messages are ALWAYS persistent (`delivery_mode=2`)
+- Messages are ALWAYS JSON with `content_type="application/json"`
+- NEVER put file data in messages — only coordination metadata and references
+- ALWAYS generate a unique `message_id` per message using `uuid4`
+- ALWAYS publish AFTER all disk/DB writes are complete (publish last)
+- Connection errors during publishing should cause the process to exit non-zero (let the orchestrator/K8s retry)
+
+### Phase 5 — RPC Request-Reply Pattern
+
+For synchronous command-response workflows (e.g., CLI tools talking to services):
+
+```python
+import uuid
+import pika
+
+class RpcClient:
+    def __init__(self, connection, exchange: str):
+        self.connection = connection
+        self.channel = connection.channel()
+        self.exchange = exchange
+
+        # Declare exclusive reply queue (auto-deleted when connection closes)
+        result = self.channel.queue_declare(queue="", exclusive=True)
+        self.reply_queue = result.method.queue
+        self.channel.basic_consume(
+            queue=self.reply_queue,
+            on_message_callback=self._on_response,
+            auto_ack=True,
+        )
+        self.responses = {}
+
+    def call(self, routing_key: str, payload: dict, timeout: int = 30) -> dict:
+        corr_id = str(uuid.uuid4())
+        message = create_message(source="cli", event_type=routing_key, payload=payload, correlation_id=corr_id)
+
+        self.channel.basic_publish(
+            exchange=self.exchange,
+            routing_key=routing_key,
+            body=json.dumps(message),
+            properties=pika.BasicProperties(
+                reply_to=self.reply_queue,
+                correlation_id=corr_id,
+                delivery_mode=2,
+                content_type="application/json",
+            )
+        )
+
+        # Wait for response with timeout
+        deadline = time.time() + timeout
+        while corr_id not in self.responses:
+            self.connection.process_data_events(time_limit=1)
+            if time.time() > deadline:
+                raise TimeoutError(f"RPC call timed out after {timeout}s")
+
+        return self.responses.pop(corr_id)
+
+    def _on_response(self, ch, method, props, body):
+        self.responses[props.correlation_id] = json.loads(body)
+```
+
+### Phase 6 — Retry and TTL Policies
+
+| Queue Type | TTL | DLX | Rationale |
+|-----------|-----|-----|-----------|
+| Event queues | 24h | Yes | Events should be processed within a day |
+| Command queues | 5min | Yes | Commands are time-sensitive |
+| Reply queues | 60s | No | Exclusive, auto-deleted |
+| DLQ queues | 7d | No | Retained for inspection/replay |
+
+#### Retry with Exponential Backoff
+
+For retryable failures, use message headers to track retry count:
+
+```python
+def should_retry(properties, max_retries=3):
+    headers = properties.headers or {}
+    retry_count = headers.get("x-retry-count", 0)
+    return retry_count < max_retries
+
+def republish_with_retry(channel, exchange, routing_key, body, properties):
+    headers = properties.headers or {}
+    retry_count = headers.get("x-retry-count", 0) + 1
+    delay_ms = min(1000 * (2 ** retry_count), 60000)  # cap at 60s
+
+    new_props = pika.BasicProperties(
+        delivery_mode=2,
+        content_type="application/json",
+        headers={**headers, "x-retry-count": retry_count, "x-retry-delay-ms": delay_ms},
+    )
+    channel.basic_publish(exchange=exchange, routing_key=routing_key, body=body, properties=new_props)
+```
+
+## Output
+
+When designing a topology, produce:
+
+```
+Message Queue Topology:
+  Exchanges: {count} ({list with types})
+  Queues: {count} (main) + {count} (DLQ)
+  Bindings: {count}
+  Files generated:
+    - infrastructure/{broker}/definitions.json (or equivalent)
+    - src/messaging/publisher.py
+    - src/messaging/consumer.py (if applicable)
+    - src/messaging/models.py (envelope schema)
+```
