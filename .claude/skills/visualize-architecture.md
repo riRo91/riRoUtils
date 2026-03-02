@@ -1,0 +1,233 @@
+# Visualize Architecture
+
+Scan a codebase and produce Mermaid diagrams that document its architecture, data flow, directory structure, and component dependencies.
+
+## Trigger
+
+- The user asks to "visualize the architecture", "diagram the system", "map the codebase", "generate architecture diagrams", or similar
+- The user asks for a specific diagram type (e.g., "show me the data flow", "draw the dependency graph")
+
+## Procedure
+
+### Phase 1 — Discovery
+
+Systematically scan the codebase to build a mental model of its structure. Perform these steps in order.
+
+#### 1.1 Directory Structure Scan
+
+Scan the project root and identify top-level directories. Focus on:
+
+- Source code directories: `src/`, `services/`, `packages/`, `lib/`, `internal/`, `cmd/`, `apps/`
+- Infrastructure: `charts/`, `k8s/`, `infrastructure/`, `deploy/`, `terraform/`
+- Configuration: config files at root (`docker-compose.yml`, `Makefile`, `pyproject.toml`, etc.)
+- Documentation: `docs/`
+- Tests: `tests/`, `test/`, `__tests__/`, `spec/`
+
+Build a tree of significant directories (skip `node_modules`, `.venv`, `__pycache__`, `target`, `dist`, `build`, `.git` and similar generated/vendored directories).
+
+#### 1.2 Identify Major Components
+
+For each significant source directory, determine:
+
+- **Component name**: The directory or package name
+- **Component type**: Service, library, CLI tool, shared module, infrastructure config
+- **Entry points**: Files named `main.*`, `index.*`, `app.*`, `cli.*`, `__main__.py`, or files containing route/command definitions
+- **Public interface**: Exported functions, API endpoints, CLI commands, message handlers
+- **Technology**: Language, framework, database clients, message queue clients
+
+#### 1.3 Detect Entry Points and Boundaries
+
+Look for:
+
+- **API routers/controllers**: Files with route definitions (FastAPI routers, Express routes, HTTP handlers)
+- **CLI entry points**: Typer/Click/Cobra/Clap command definitions
+- **Message consumers**: RabbitMQ/Kafka/SQS consumer definitions
+- **Scheduled tasks**: Cron definitions, periodic task registrations
+- **Database models**: ORM models, schema definitions, migration files
+
+#### 1.4 Map Inter-Component Dependencies
+
+Trace connections between components by examining:
+
+- **Import statements**: Which components import from which others
+- **Configuration references**: Shared config keys, environment variables, connection strings
+- **Message routing**: Queue names, topic patterns, exchange bindings that link producers to consumers
+- **API calls**: HTTP client calls to other services, gRPC stubs
+- **Shared storage**: Database collections/tables accessed by multiple components, shared file paths
+- **Docker/K8s networking**: Service names, port mappings, network policies
+
+#### 1.5 Identify Data Flow
+
+Trace how data enters, moves through, and exits the system:
+
+- **Ingress points**: API endpoints, file watchers, message consumers, CLI inputs
+- **Processing stages**: Transformation steps, validation, enrichment
+- **Storage interactions**: Reads and writes to databases, file systems, caches
+- **Egress points**: API responses, published messages, written files, notifications
+
+### Phase 2 — Diagram Generation
+
+Generate the following Mermaid diagrams. Adapt the set based on what was discovered — skip diagram types that do not apply to the codebase.
+
+#### 2.1 System Architecture Diagram
+
+A high-level component diagram showing all major services, libraries, and infrastructure, with arrows indicating communication paths.
+
+```mermaid
+graph TB
+    subgraph "Component Group Name"
+        A[Service A]
+        B[Service B]
+    end
+    subgraph "Infrastructure"
+        DB[(Database)]
+        MQ[Message Queue]
+    end
+    A -->|"REST API"| B
+    A -->|"read/write"| DB
+    B -->|"publish"| MQ
+```
+
+Guidelines:
+- Group related components into subgraphs
+- Label arrows with the communication mechanism (REST, gRPC, message queue, shared disk, etc.)
+- Use standard shapes: rectangles for services, cylinders for databases, parallelograms for queues
+- Keep to 15 or fewer nodes for readability; aggregate minor components into a single node if needed
+
+#### 2.2 Data Flow Diagram
+
+Show how data moves from input to output through the system.
+
+```mermaid
+flowchart LR
+    Input["Data Source"] --> Ingest["Ingestion"]
+    Ingest --> Process["Processing"]
+    Process --> Store["Storage"]
+    Store --> Output["Output/API"]
+```
+
+Guidelines:
+- Follow the data, not the control flow
+- Label edges with the data type or format (e.g., "DICOM files", "JSON events", "CSV export")
+- Show branching where data takes different paths based on type or condition
+- Include error/retry paths if they are architecturally significant
+
+#### 2.3 Directory Structure Diagram
+
+A tree diagram showing the significant directories and their purposes.
+
+```mermaid
+graph TD
+    Root["project-root/"]
+    Root --> Src["src/"]
+    Root --> Docs["docs/"]
+    Root --> Infra["infrastructure/"]
+    Src --> ModA["module-a/ — Description"]
+    Src --> ModB["module-b/ — Description"]
+```
+
+Guidelines:
+- Include only directories that are architecturally significant (not every leaf directory)
+- Annotate each node with a brief description of its purpose
+- Go 2-3 levels deep maximum
+
+#### 2.4 Dependency Graph
+
+Show which components depend on which, indicating the direction of dependency.
+
+```mermaid
+graph TD
+    A["Service A"] --> B["Library B"]
+    A --> C["Shared Types"]
+    D["Service D"] --> B
+    D --> C
+```
+
+Guidelines:
+- Arrows point from the dependent to the dependency (A depends on B: A --> B)
+- Highlight circular dependencies with a note if any are found
+- Distinguish between runtime dependencies and build/dev dependencies if relevant
+
+#### 2.5 Additional Diagrams (If Applicable)
+
+Generate these only when the codebase warrants them:
+
+- **Sequence Diagram**: For a key workflow (e.g., request processing, pipeline execution), show the sequence of calls between components
+- **State Diagram**: For components with well-defined state machines (e.g., job lifecycle, pipeline status)
+- **Infrastructure Diagram**: For projects with complex deployment topologies (multi-namespace K8s, multi-cloud)
+
+### Phase 3 — Output
+
+#### 3.1 Create the Diagrams Document
+
+Write `docs/architecture-diagrams.md` with this structure:
+
+```markdown
+# Architecture Diagrams
+
+> Auto-generated on {YYYY-MM-DD}. Regenerate by asking the agent to "visualize the architecture".
+
+## System Architecture
+
+{1-2 sentence description of what this diagram shows}
+
+```mermaid
+{system architecture diagram}
+```
+
+## Data Flow
+
+{1-2 sentence description}
+
+```mermaid
+{data flow diagram}
+```
+
+## Directory Structure
+
+{1-2 sentence description}
+
+```mermaid
+{directory structure diagram}
+```
+
+## Dependency Graph
+
+{1-2 sentence description}
+
+```mermaid
+{dependency graph}
+```
+
+## Notes
+
+- {Any caveats, assumptions, or areas where the diagram simplifies reality}
+- {Components that were excluded for readability and why}
+```
+
+#### 3.2 Update AGENT.md (Optional)
+
+If the user confirms, add or update a concise architecture summary in `AGENT.md`:
+
+- A simplified text description of the major components and their relationships
+- A reference to `docs/architecture-diagrams.md` for full diagrams
+
+Only do this if `AGENT.md` exists and the user agrees. Do not create `AGENT.md` solely for this purpose.
+
+## Output
+
+Report to the user:
+
+```
+Architecture diagrams generated:
+  docs/architecture-diagrams.md
+    - System Architecture ({N} components, {M} connections)
+    - Data Flow ({N} stages)
+    - Directory Structure ({N} directories)
+    - Dependency Graph ({N} nodes, {M} edges)
+    {- Additional: {diagram name} (if any)}
+
+{Any warnings about areas that could not be fully mapped}
+```
+
+If the codebase is too small or flat to warrant multiple diagrams, generate only the diagrams that add value and explain why others were skipped.

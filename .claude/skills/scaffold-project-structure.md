@@ -1,0 +1,196 @@
+# Scaffold Project Structure
+
+Bootstrap a new project with a standardized directory layout, agent configuration, and documentation ready for development with AI-assisted tooling.
+
+## Trigger
+
+- The user asks to "scaffold a project", "bootstrap a project", "create a new project", or "set up a project"
+- The user starts work in an empty or nearly empty directory and asks for initial setup
+
+## Procedure
+
+### 1. Gather Requirements
+
+Ask the user for the following. Accept partial answers and use sensible defaults for anything not specified.
+
+| Parameter | Required | Default |
+|---|---|---|
+| Project name | Yes | Directory name |
+| Brief description (1-2 sentences) | Yes | — |
+| Primary tech stack (e.g., Python, Node, Go, Rust) | Yes | — |
+| Secondary tools (e.g., Docker, K8s, Terraform) | No | None |
+| Initialize git repository | No | Ask before proceeding |
+| Set up GitHub isolation (SSH key + gh CLI scoped to project) | No | Ask before proceeding |
+
+Do not proceed until the project name, description, and primary tech stack are confirmed.
+
+### 2. Create Directory Structure
+
+Create the following directories and files. Adjust tech-stack-specific items as appropriate.
+
+```
+{project-root}/
+  AGENT.md                    # Agent instructions (see step 3)
+  README.md                   # Human-facing overview (see step 4)
+  .gitignore                  # Tech-stack-appropriate ignores (see step 5)
+  .claude/
+    skills/                   # Claude Code skill files
+  .cursor/
+    rules/                    # Cursor rule files
+  docs/                       # Design docs, ADRs, primers
+  scripts/                    # Utility and setup scripts
+  src/                        # Source code (or equivalent for the stack)
+```
+
+Stack-specific additions:
+
+- **Python**: Add `requirements.txt` or `pyproject.toml`, create `src/{project_name}/` package with `__init__.py`
+- **Node/TypeScript**: Add `package.json`, `tsconfig.json` (if TS), create `src/`
+- **Go**: Add `go.mod`, create `cmd/` and `internal/`
+- **Rust**: Run `cargo init` or add `Cargo.toml`, create `src/`
+- **Docker**: Add `Dockerfile` stub, `docker-compose.yml` stub
+- **K8s**: Add `charts/` or `k8s/` directory
+
+### 3. Write AGENT.md
+
+Populate `AGENT.md` with the following sections:
+
+```markdown
+# {Project Name}
+
+{Brief description}
+
+## Project Structure
+
+{Tree listing of the actual directories and files created}
+
+## Tech Stack
+
+- {Primary stack and version}
+- {Secondary tools}
+
+## Conventions
+
+- {Language/framework-specific conventions — e.g., formatting, naming, module layout}
+- Agent instructions files: `AGENT.md` (this file)
+- Skills: `.claude/skills/`, Rules: `.cursor/rules/`
+- Documentation: `docs/`
+
+## Development Setup
+
+{Placeholder instructions — to be filled in as the project evolves}
+
+## Key File Groups
+
+{To be populated as the project grows}
+```
+
+### 4. Write README.md
+
+Populate `README.md` with:
+
+```markdown
+# {Project Name}
+
+{Brief description}
+
+## Project Structure
+
+{Same tree as AGENT.md}
+
+## Getting Started
+
+### Prerequisites
+
+- {Tech stack prerequisites}
+
+### Setup
+
+{Step-by-step setup instructions appropriate to the stack}
+
+## Development
+
+{Placeholder for development workflow}
+
+## Conventions
+
+- See `AGENT.md` for agent-specific conventions
+- {Any additional human-facing conventions}
+```
+
+### 5. Generate .gitignore
+
+Produce a `.gitignore` tailored to the chosen tech stack. Always include:
+
+```
+# Secrets and credentials
+.env
+.env.*
+*.pem
+*.key
+
+# Agent/IDE local config
+.claude/settings.json
+.gh/
+.ssh/
+
+# OS files
+.DS_Store
+Thumbs.db
+```
+
+Add stack-specific entries:
+
+- **Python**: `__pycache__/`, `*.pyc`, `.venv/`, `dist/`, `*.egg-info/`
+- **Node**: `node_modules/`, `dist/`, `.next/`, `coverage/`
+- **Go**: binary output directories
+- **Rust**: `target/`
+- **Docker**: none additional needed typically
+- **General**: `*.log`, `tmp/`, `.idea/`, `.vscode/` (unless the user wants IDE settings tracked)
+
+### 6. Initialize Git (If Requested)
+
+If the user confirmed git initialization:
+
+1. Run `git init`
+2. Stage all created files
+3. Do NOT commit — leave that to the user or a separate explicit request
+
+If the user declined, skip this step entirely.
+
+### 7. GitHub Isolation Setup (If Requested)
+
+If the user wants GitHub isolation:
+
+1. Check whether a `github-isolation-setup` skill exists in `.claude/skills/`
+2. If it does, follow that skill's procedure
+3. If it does not, inform the user that manual setup is needed and suggest creating the skill
+
+### 8. Final Validation
+
+Verify that:
+- All planned directories exist
+- `AGENT.md` and `README.md` are populated and consistent with each other
+- `.gitignore` is present and non-empty
+- `.claude/skills/` and `.cursor/rules/` directories exist
+
+## Output
+
+Print a summary:
+
+```
+Project "{name}" scaffolded successfully.
+
+Created:
+  {list of files and directories}
+
+Next steps:
+  1. Review AGENT.md and README.md
+  2. {Stack-specific next step, e.g., "Create a virtual environment and install dependencies"}
+  3. Begin adding source code to src/
+```
+
+If git was initialized, append:
+```
+  Git initialized. Run `git add -A && git commit -m "Initial scaffold"` when ready.
+```

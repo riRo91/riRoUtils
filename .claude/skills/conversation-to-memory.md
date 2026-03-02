@@ -1,0 +1,120 @@
+# Conversation to Memory
+
+Extract key learnings, decisions, and preferences from the current conversation and persist them to structured memory files for future sessions.
+
+## Trigger
+
+- The user asks to "save this", "remember this", "update memory", "persist learnings", or similar
+- At the end of a productive session where significant decisions were made or new patterns were established
+- The user explicitly says the session is wrapping up and asks to capture what was learned
+
+## Procedure
+
+### 1. Scan the Conversation
+
+Review the full conversation history and extract items in these categories:
+
+| Category | What to Look For |
+|---|---|
+| **Architectural decisions** | Design choices, trade-offs discussed, alternatives rejected and why |
+| **User preferences** | Workflow habits, formatting preferences, tool choices, communication style |
+| **Problem solutions** | Bugs that were hard to diagnose, workarounds, non-obvious fixes |
+| **File and structure discoveries** | Important paths, config locations, project layout insights |
+| **Tool and command patterns** | CLI commands, flags, or tool invocations that proved effective |
+| **Conventions and patterns** | Naming conventions, code patterns, testing strategies established |
+| **Integration details** | API endpoints, credentials setup, service connections, environment variables |
+| **Mistakes and corrections** | Assumptions that proved wrong, initial approaches that failed |
+
+For each extracted item, note:
+- The fact or decision itself (concise, actionable phrasing)
+- The rationale or context (why it matters)
+- Confidence level: **verified** (confirmed against project files) vs. **inferred** (reasonable but not double-checked)
+
+### 2. Verify Against Project Files
+
+Before writing any memory:
+
+- For file paths: confirm the file exists at the stated location
+- For configuration values: read the actual config file and verify the value
+- For architectural claims: check that the code structure matches the claim
+- For command patterns: confirm the tool/binary exists and the flags are valid
+
+Downgrade or discard any item that cannot be verified. Mark unverifiable but plausible items as **inferred** and include them only if they are high value.
+
+### 3. Check Existing Memory
+
+Read all files in the memory directory (typically `.claude/memory/` or the project-specific memory path). For each extracted item:
+
+- **Duplicate**: The exact fact is already recorded. Skip it.
+- **Update**: A related entry exists but is outdated or incomplete. Prepare an update.
+- **Contradiction**: The new information conflicts with an existing entry. Flag it for the user to resolve, or if the new information is verified and the old is clearly wrong, prepare a replacement.
+- **New**: No related entry exists. Prepare an addition.
+
+### 4. Organize by Topic
+
+Group the items to be written into logical topic clusters. Common topic files include:
+
+| File | Contents |
+|---|---|
+| `MEMORY.md` | High-level project index: overview, key file groups, infrastructure settings, tech stack summary. Keep under 200 lines. |
+| `preferences.md` | User workflow preferences, tool choices, communication patterns |
+| `architecture.md` | System design decisions, component relationships, data flow |
+| `patterns.md` | Code conventions, naming patterns, recurring solutions |
+| `debugging.md` | Known issues, diagnostic techniques, common failure modes |
+| `infrastructure.md` | Environment setup, credentials, deployment details, CI/CD |
+
+Only create a topic file if there are 3 or more items for that topic. Otherwise, fold the items into `MEMORY.md`.
+
+### 5. Write Memory Files
+
+For `MEMORY.md`:
+- Use a flat structure with `##` section headings
+- Keep entries as bullet points: concise, factual, scannable
+- Include the most important 80% of information; omit low-value noise
+- If the file would exceed 200 lines, split overflow into topic-specific files and reference them from `MEMORY.md`
+
+For topic-specific files:
+- Use `##` headings to group related items
+- Include brief context or rationale inline (not just bare facts)
+- Add a `## Last Updated` section at the bottom with the current date
+
+### 6. Memory Hygiene Rules
+
+Apply these rules strictly:
+
+- **No session-specific state**: Do not save things like "we were debugging X" or "the current branch is Y" — these are transient.
+- **No redundant phrasing**: If the same fact can be said in fewer words, use fewer words.
+- **No unverified guesses**: If something was discussed but not confirmed, either verify it now or omit it.
+- **Update, don't append**: If an existing bullet covers the same topic, rewrite it with the new information rather than adding a second bullet.
+- **Remove stale entries**: If you discover that an existing memory entry is now wrong (file was deleted, config changed, decision reversed), remove or correct it.
+- **Preserve structure**: When updating `MEMORY.md`, maintain its existing section order and heading hierarchy. Add new sections at the end, not in the middle.
+
+### 7. Confirm with the User
+
+Before writing, present a summary of planned changes:
+
+```
+Memory update plan:
+  MEMORY.md — 3 entries updated, 2 entries added
+  patterns.md — new file, 5 entries
+  debugging.md — 1 entry added
+
+Removed/corrected:
+  MEMORY.md — removed outdated entry about {X}
+```
+
+Wait for the user to approve or adjust before writing files.
+
+## Output
+
+After writing, confirm:
+
+```
+Memory updated:
+  {file} — {action: created / updated} ({N} entries)
+  ...
+
+Total: {N} entries written across {M} files.
+```
+
+If nothing meaningful was found to persist, report: "No significant new learnings detected in this conversation. Memory is up to date."

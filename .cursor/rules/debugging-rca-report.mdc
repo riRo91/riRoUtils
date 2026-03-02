@@ -1,0 +1,284 @@
+---
+description: Structured debugging methodology with root cause analysis, fix implementation, and formal RCA report generation
+globs:
+alwaysApply: false
+---
+
+# Systematic Debugging and Root Cause Analysis
+
+## Description
+
+Provides a structured methodology for debugging complex issues and producing a formal Root Cause Analysis (RCA) report. Guides the investigation from initial symptom observation through system exploration, evidence collection, root cause identification, fix implementation, and documentation. The resulting RCA report serves as both a historical record and a prevention guide.
+
+## Trigger
+
+Use this skill when the user:
+- Has completed a debugging session and wants to document findings
+- Asks for a root cause analysis or RCA report
+- Says "debug this systematically", "find the root cause", "create an RCA"
+- Encounters a complex issue that spans multiple components or layers
+- Wants a structured investigation rather than ad-hoc debugging
+- Asks to document a bug fix for future reference
+
+## Procedure
+
+### Phase 1 — System Exploration
+
+Before investigating the specific bug, build a mental model of the system around the failure point.
+
+**1.1 — Document the Symptom**
+Record the observed failure precisely:
+- What is the expected behavior?
+- What is the actual behavior?
+- When did it start (or when was it first noticed)?
+- Is it reproducible? If so, what are the exact reproduction steps?
+- What is the blast radius (who/what is affected)?
+- What is the severity (data loss, degraded service, cosmetic, etc.)?
+
+**1.2 — Map the System Pipeline**
+Identify the full data/execution flow that includes the failure point:
+- All entry points (API endpoints, CLI commands, cron jobs, message consumers, user actions)
+- Processing stages (services, functions, transformations)
+- Data stores (databases, caches, files, message queues)
+- Output points (API responses, files written, messages published, UI updates)
+- External dependencies (third-party APIs, cloud services, hardware)
+
+Draw a simplified flow diagram if the system is complex:
+```
+Input -> [Service A] -> [Queue] -> [Service B] -> [Database] -> Output
+                                        ^
+                                   failure here?
+```
+
+**1.3 — Collect Evidence**
+Gather data from every relevant source. Use targeted, scripted commands for faster extraction rather than manual browsing.
+
+**Logs:**
+- Application logs around the time of failure (use timestamps to narrow scope)
+- Infrastructure logs (container runtime, orchestrator, load balancer)
+- Audit logs (who/what triggered the operation)
+
+**State:**
+- Database records related to the failing operation
+- Cache state (stale entries, missing keys)
+- File system state (permissions, disk space, missing files)
+- Message queue state (pending messages, dead-letter queues, consumer lag)
+- Process state (memory usage, open connections, thread count)
+
+**Configuration:**
+- Environment variables at the time of failure
+- Config files (check for recent changes)
+- Feature flags or runtime toggles
+- Infrastructure config (network policies, resource limits, scaling rules)
+
+**Recent Changes:**
+- Recent deployments or config changes (`git log`, deployment history)
+- Infrastructure changes (scaling events, node replacements)
+- Dependency updates (library versions, API changes)
+
+**1.4 — Reproduce the Issue**
+If the issue is not yet reproducible:
+- Attempt to reproduce in a development or staging environment
+- Identify the minimal set of conditions required to trigger the failure
+- Document the reproduction steps precisely
+
+### Phase 2 — Root Cause Analysis
+
+**2.1 — Correlate Findings**
+Lay out all collected evidence and look for correlations:
+- Timeline: What happened in what order? Build a chronological event log.
+- Coincidences: Did anything else change around the same time?
+- Patterns: Has this happened before? Are there similar entries in logs?
+- Scope: Does the issue affect all inputs or only specific ones?
+
+**2.2 — Build the Causal Chain**
+Trace the failure backward from symptom to root cause. Document each link:
+
+```
+SYMPTOM: API returns 500 error
+  <- PROXIMATE CAUSE: Unhandled exception in handler X
+    <- INTERMEDIATE CAUSE: Database query returns unexpected null
+      <- ROOT CAUSE: Migration script did not backfill column Y for existing records
+```
+
+Rules for identifying the root cause:
+- The root cause is the earliest fixable point in the chain
+- "Human error" is never the root cause — ask why the error was possible
+- If the root cause is a missing safeguard, the root cause is the gap in the system design
+- There may be multiple contributing factors; document all of them
+
+**2.3 — Classify the Root Cause**
+Categorize to aid in trend analysis:
+- **Code defect** — logic error, off-by-one, unhandled edge case
+- **Configuration error** — wrong setting, missing env var, stale config
+- **Infrastructure failure** — resource exhaustion, network partition, hardware fault
+- **Data issue** — corrupt data, schema mismatch, missing migration
+- **Dependency failure** — third-party outage, breaking API change, version incompatibility
+- **Race condition** — timing-dependent failure, missing lock, stale read
+- **Design gap** — missing validation, inadequate error handling, missing retry logic
+
+**2.4 — Present the Root Cause**
+Clearly state the root cause with:
+- One-sentence summary
+- Supporting evidence (log lines, code references, data samples)
+- Confidence level (confirmed, highly likely, suspected)
+- Contributing factors (conditions that made the root cause possible)
+
+### Phase 3 — Solution Proposal
+
+**3.1 — Generate Fix Options**
+Propose at least two approaches to fixing the issue. For each option, describe:
+
+| Aspect | Option A | Option B |
+|--------|----------|----------|
+| **Approach** | What to do | What to do |
+| **Scope** | Files/components affected | Files/components affected |
+| **Effort** | Time estimate | Time estimate |
+| **Risk** | What could go wrong | What could go wrong |
+| **Durability** | Does it prevent recurrence? | Does it prevent recurrence? |
+| **Trade-offs** | What is sacrificed | What is sacrificed |
+
+When applicable, include:
+- A **quick fix** (minimal change to resolve the immediate symptom)
+- A **proper fix** (addresses the root cause and prevents recurrence)
+- A **comprehensive fix** (proper fix plus additional hardening)
+
+**3.2 — Present Options to the User**
+Present the options clearly and let the user choose. Do not implement anything without user approval. Include a recommendation with reasoning.
+
+### Phase 4 — Implementation
+
+After the user selects a solution:
+
+**4.1 — Implement the Fix**
+- Make the code, configuration, or infrastructure changes
+- Follow existing project conventions and patterns
+- Add or update tests to cover the failure scenario
+
+**4.2 — Verify the Fix**
+- Run the reproduction steps and confirm the issue is resolved
+- Run the existing test suite to check for regressions
+- If applicable, verify in a staging or preview environment
+- Check that the fix handles edge cases identified during investigation
+
+**4.3 — Address Contributing Factors**
+If there were contributing factors beyond the root cause, create follow-up tasks or tickets for each:
+- Missing monitoring or alerting
+- Inadequate logging at the failure point
+- Missing input validation
+- Documentation gaps
+
+### Phase 5 — Documentation
+
+**5.1 — Create the RCA Report**
+
+Create the file at `docs/rca/RCA-YYYY-MM-DD-<short-title>.md` where `<short-title>` is a lowercase-kebab-case summary (e.g., `null-pointer-in-auth-handler`, `stale-cache-after-deploy`).
+
+Structure:
+
+```markdown
+# RCA: <Short Description of the Issue>
+
+**Date**: YYYY-MM-DD
+**Severity**: Critical | High | Medium | Low
+**Duration**: Time from first occurrence to resolution
+**Author**: <who wrote this report>
+
+## Symptom
+
+What was observed. Include exact error messages, HTTP status codes, user-visible behavior.
+
+## Impact
+
+- Who was affected (users, services, data)
+- Scope (percentage of requests, specific inputs, all traffic)
+- Business impact (if applicable)
+
+## Timeline
+
+| Time (UTC) | Event |
+|------------|-------|
+| HH:MM | First occurrence / first alert |
+| HH:MM | Investigation started |
+| HH:MM | Root cause identified |
+| HH:MM | Fix deployed |
+| HH:MM | Issue confirmed resolved |
+
+## Investigation
+
+Step-by-step account of the debugging process:
+1. What was checked first and what was found
+2. What hypotheses were formed and tested
+3. What evidence confirmed or eliminated each hypothesis
+4. How the root cause was ultimately identified
+
+Include relevant log excerpts, code snippets, and data samples.
+
+## Root Cause
+
+Clear statement of the root cause with supporting evidence.
+
+**Category**: (code defect | config error | infra failure | data issue | dependency | race condition | design gap)
+
+**Causal Chain**:
+```
+SYMPTOM -> PROXIMATE CAUSE -> ... -> ROOT CAUSE
+```
+
+**Contributing Factors**:
+- Factor 1
+- Factor 2
+
+## Resolution
+
+What fix was applied. Include:
+- Files modified (with paths)
+- Code changes (before/after snippets for key changes)
+- Configuration changes
+- Commit hash or PR link (if available)
+
+## Prevention
+
+Measures to prevent recurrence:
+
+| Action | Type | Status |
+|--------|------|--------|
+| Added validation for X | Code change | Done |
+| Added monitoring alert for Y | Monitoring | TODO |
+| Updated runbook for Z | Documentation | TODO |
+| Added regression test | Testing | Done |
+
+## Lessons Learned
+
+- What went well during the investigation
+- What could be improved in the debugging process
+- Systemic improvements to consider
+```
+
+**5.2 — Update Project Documentation**
+- If the fix changes system behavior, update relevant documentation
+- If new conventions were established, add them to project rules
+- If new monitoring or alerting was added, update the operations runbook
+
+**5.3 — Optional: Create Regression Test**
+If a regression test does not already exist for this failure mode:
+- Write a test that specifically reproduces the root cause condition
+- Verify the test fails without the fix and passes with it
+- Name the test descriptively (e.g., `test_handles_null_column_after_migration`)
+
+**5.4 — Optional: Create Monitoring Alert**
+If the issue could have been caught earlier with better monitoring:
+- Propose a specific alert definition (metric, threshold, duration)
+- Specify where the alert should be configured
+- Define the alert severity and notification channel
+
+## Output
+
+Deliver:
+- `docs/rca/RCA-YYYY-MM-DD-<short-title>.md` — the complete RCA report
+- The implemented fix (code changes, config changes, etc.)
+- Regression test (if created)
+- Proposed monitoring alerts (if applicable)
+- List of follow-up tasks for contributing factors not addressed in this session
+- Updates to project documentation (if applicable)
+- A brief summary confirming the issue is resolved and what remains as follow-up work
