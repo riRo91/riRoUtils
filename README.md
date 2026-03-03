@@ -19,9 +19,11 @@ riRoUtils/
 ├── .cursor/
 │   └── rules/                # Cursor rules (.mdc) — mirrors of Claude skills
 ├── docs/                     # Detailed documentation
-│   └── team-workflows.md     # Multi-agent workflow guide
+│   ├── team-workflows.md     # Multi-agent workflow guide
+│   └── session-rewind.md     # Session rewind usage guide
 ├── scripts/                  # Executable utility scripts
-│   └── setup-github.sh       # Project-scoped GitHub CLI setup
+│   ├── setup-github.sh       # Project-scoped GitHub CLI setup
+│   └── session-rewind.py     # Session rewind script
 ├── .envrc                    # direnv config for GitHub isolation
 └── .gitignore
 ```
@@ -42,6 +44,7 @@ riRoUtils/
 | 10 | **Database Metadata Patterns** | Implement database metadata storage with connection pooling, scoped CRUD, batch operations, flexible schemas, index strategies, and init scripts |
 | 11 | **Pipeline DAG Definition** | Design and validate pipeline definitions as DAGs with step dependencies, conditions, resource specs, timeouts, retries, and interactive design workflow |
 | 12 | **Review Code Compliance** | Review code against project conventions using a configurable PASS/FAIL checklist covering lifecycle, messaging, storage, security, and containerization |
+| 13 | **Session Rewind** | Recover pre-compression context from Claude Code sessions — inspect rewind points and create truncated copies to resume from any earlier message |
 
 ## Agents
 
